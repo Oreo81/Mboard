@@ -4,9 +4,8 @@ import discord
 from discord.ext import commands
 import sqlite3 
 import asyncio #for timeout error
-from bs4 import BeautifulSoup
-import requests
 from ast import literal_eval
+import allocine as al
 
 sqlconnect = sqlite3.connect('./media/db/mlist.db')
 cursorsql = sqlconnect.cursor()
@@ -79,59 +78,8 @@ def displaymod(movie):
     return embed
 
 def get_info(url):
-    url_page = f'https://www.allocine.fr/film/fichefilm_gen_cfilm={url}.html'
-    page = requests.get(url_page)
-    soup = BeautifulSoup(page.content, "html.parser")
-    not_found = soup.find(class_='error-page error-404')
-    style = ["Action","Animation","Arts martiaux","Aventure","Biopic","Bollywood",
-            "Comédie","Comédie dramatique","Comédie musicale","Concert","Dessin animé",
-            "Divers","Drama","Drame","Epouvante-horreur","Erotique","Espionnage","Evenement Sportif",
-            "Expérimental","Famille","Fantastique","Guerre","Historique","Judiciaire","Musical","Médical",
-            "Opéra","Policier","Péplum","Romance","Science fiction","Spectacle","Thriller","Western"]
-
-    if not_found:
-        return False
-    else:
-        titre = str(soup.find(class_="titlebar-title titlebar-title-lg")).split(">")[1][:-5]
-        rat = str(soup.findAll(class_="stareval-note")).split(">")
-        pic = str(soup.find(class_="thumbnail-img")).split('"')[7]
-        try:
-            da = str(soup.find(class_="date")).split(">")[1]
-            if da:
-                new = da.replace("\n","")[:-6]
-                date = new
-            else: date = "NA"
-        except:
-            date = "NA"
-        duree_ = str(soup.findAll('div', {"class" : "meta-body-item meta-body-info"})).split(">")
-        sty = str(soup.findAll('div', {"class" : "meta-body-item meta-body-info"})).split(">")
-
-        if titre: pass
-        else: titre = 'NA'
-
-        if rat:
-            ratting = rat[1][:-6],rat[3][:-6]
-            if ratting[0] == '--':
-                ratting = ('NA',ratting[1])
-            if ratting[1] == '--':
-                ratting = (ratting[0],'NA')
-            if ratting[0] == '--' and ratting[1] == '--':
-                ratting = "NA"
-        else:
-            ratting = "NA"
-
-        if pic: pass
-        else: pic = 'https://motivatevalmorgan.com/wp-content/uploads/2016/06/default-movie.jpg'
-
-        if duree_: duree = duree_[7].split("\n")[1]
-        else: duree = "NA"
-
-        if sty: style_check = [x[:-6] for x in sty if x[:-6] in style]
-        else: style_check = "NA"
-
-        movie = {"IDmovie": url,"nom": str(titre), "date": str(date), "duree": str(duree) ,  "ratting":ratting, "img": str(pic), "style": style_check, "link": str(url_page)}
-        print(movie)
-        return movie
+    info = al.get_full_info(url)
+    return info
 
 class list(commands.Cog):
     def __init__(self,bot):
@@ -210,7 +158,6 @@ class list(commands.Cog):
                         movie_existe = cursorsql.execute(f"SELECT IDmovie FROM movie WHERE IDmovie = {url}")
                         movie_existe = movie_existe.fetchall()
                         IDlist = get_id_list(name_list,idadmin)
-                        print(IDlist)
                         if len(movie_existe)==0:
                             cursorsql.execute("INSERT INTO movie VALUES (?,?,?,?,?,?,?,?)",(movie_link['IDmovie'],f"{movie_link['nom']}",f"{movie_link['date']}",f"{movie_link['duree']}",f"{movie_link['ratting']}",f"{movie_link['img']}",f"{movie_link['style']}",f"{movie_link['link']}",))
                             cursorsql.execute("INSERT INTO inlist VALUES (?,?,?,?,?)",(IDlist,url,idadmin,0,'False'))
@@ -254,8 +201,7 @@ class list(commands.Cog):
         if len(arg) == 0:
             user_list = cursorsql.execute(f"SELECT * FROM list WHERE IDadmin = {idadmin}")
             user_list = user_list.fetchall()
-            print(user_list)
-
+            await ctx.send(f"{user_list}")
 
         elif len(arg) == 1:
             if name_alrdy_take(arg[0],idadmin):

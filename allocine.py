@@ -30,16 +30,16 @@ def get_title(content):
 
 def get_ratting(content):
     rat = str(content.findAll(class_="stareval-note")).split(">")
-    if rat:
+    if rat != ['[]']:
         ratting = rat[1][:-6],rat[3][:-6]
         if ratting[0] == '--':
             ratting = ('NA',ratting[1])
         if ratting[1] == '--':
             ratting = (ratting[0],'NA')
         if ratting[0] == '--' and ratting[1] == '--':
-            ratting = "NA"
+            ratting = ('NA','NA')
     else:
-        ratting = "NA"
+        ratting = ('NA','NA')
     return ratting
 
 #------------------------------

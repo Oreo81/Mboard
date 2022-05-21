@@ -1,67 +1,25 @@
 from datetime import *
-from time import *
+from hashlib import new
+import time
 import discord
 from discord.ext import commands
 import sqlite3 
 import asyncio #for timeout error
-from ast import literal_eval
 import allocine as al
+import sqlmovie as sq
 
-sqlconnect = sqlite3.connect('./media/db/mlist.db')
-cursorsql = sqlconnect.cursor()
+cursorsql = sq.cursor()
 
-def get_hight_id(table): #return new id for list
-    max_id = cursorsql.execute(f"SELECT IDlist FROM {table} ORDER BY IDlist DESC LIMIT 1")
-    max_id = max_id.fetchall()
-    if len(max_id)==0:
-        return 1
-    else:
-        return int(max_id[0][0]) + 1
-
-def name_alrdy_take(name_list,idadmin):
-    check = cursorsql.execute(f"SELECT IDlist FROM list where name='{name_list}' and IDadmin = {idadmin}")
-    check = check.fetchall()
-    if len(check) == 0:
-        return False
-    else:
-        return True
-
-def check_movie_in_list(IDmovie,idadmin):
-    check = cursorsql.execute(f"SELECT IDlist FROM inlist where IDmovie='{IDmovie}' and IDadmin ='{idadmin}'")
-    check = check.fetchall()
-    if len(check) == 0:
-        return True
-    else:
-        return False
-        
-def get_id_list(name_list,idadmin):
-    check = cursorsql.execute(f"SELECT IDlist FROM list WHERE IDadmin = {idadmin} AND name='{name_list}'")
-    check = check.fetchall()
-    return check[0][0]
-
-def get_info_with_id(IDmovie):
-    movie = cursorsql.execute(f"SELECT * FROM movie where IDmovie={IDmovie}")
-    movie = movie.fetchall()[0] 
-    output = {
-    "IDmovie": movie[0],
-    "nom": movie[1],
-    "date": movie[2],
-    "duree": movie[3] ,
-    "ratting":literal_eval(movie[4]),
-    "img": movie[5],
-    "style": literal_eval(movie[6]),
-    "link": movie[7]}
-    return output
-
+#------------------------------
 def displaymod(movie):
     genre = ""
-    for k in movie['style']:
-        genre += k +" / "
+    for sty in movie['style']:
+        genre += sty + " / "
     genre = genre[:-2]
 
     ratting = ""
-    for k in movie['ratting']:
-        ratting += k+" / "
+    for rt in movie['ratting']:
+        ratting += rt + " / "
     ratting = ratting[:-2]
 
     embed = discord.Embed(
@@ -77,22 +35,42 @@ def displaymod(movie):
     embed.add_field(name='〉 Note Presse/Spectateur', value=ratting, inline= True)
     return embed
 
+#------------------------------
 def get_info(url):
     info = al.get_full_info(url)
     return info
 
+#------------------------------
+def err_display(ctx,err_message):
+    error = discord.Embed(
+        title = "{}  Erreur dans la commande".format("\U000026D4",ctx.message.content),
+        color = discord.Colour.dark_red()
+    )
+    error.add_field(name=f'〉 {err_message}', value='Voir m!help', inline= False)
+    return error
+
+#------------------------------------------------------------
 class list(commands.Cog):
     def __init__(self,bot):
         self.bot = bot
 
-    @commands.command(name="listdel",aliases=['ld', 'listd', 'dell'])
+    # @commands.Cog.listener()
+    # async def on_command_error(self, ctx, error):
+    #     error = discord.Embed(
+    #         title = "{}  La commande [{}] n'existe pas".format("\U000026D4",ctx.message.content),
+    #         color = discord.Colour.dark_red()
+    #     )
+    #     await ctx.send(embed = error)
+
+#------------------------------
+    @commands.command(name="deletelist",aliases=['dl'])
     async def listdel(self,ctx,*name):
         id_admin = ctx.author.id
         if not name:
             await ctx.send("> Mettre un nom de liste [m!help]")
         else:
             name = str(name[0])
-            if not name_alrdy_take(name,id_admin):
+            if not sq.name_alrdy_take(name,id_admin):
                 error = await ctx.send(f"> Vous n'avez aucune liste sous ce nom.")
             else:
                 del_list_confirm = await ctx.send(f"> Voulez vous vraiment supprimé la liste **{name}** ?")
@@ -104,7 +82,7 @@ class list(commands.Cog):
                 try:
                     reaction, user = await self.bot.wait_for('reaction_add', timeout=10.0, check=check)    
                     if str(reaction.emoji) == valid_reactions[0]:
-                        id_list = get_id_list(f'{name}',id_admin)
+                        id_list = sq.get_id_list(f'{name}',id_admin)
                         cursorsql.execute("DELETE FROM list WHERE IDadmin = (?) and name = (?)",(id_admin,f'{name}'))
                         cursorsql.execute("DELETE FROM inlist WHERE IDlist = (?)",(id_list))
                         await del_list_confirm.clear_reaction(u"\u2705")
@@ -119,27 +97,33 @@ class list(commands.Cog):
                         await del_list_confirm.clear_reaction(u"\u2705")
                         await del_list_confirm.clear_reaction(u"\u274C")
                         await del_list_confirm.edit(content="Annulé [Timeout]")
-        sqlconnect.commit()
+        sq.commit()
 
-    @commands.command(name="listcreate",aliases=['lc', 'listc', 'createl'])
-    async def listcreate(self,ctx,*name):
+
+
+
+
+#------------------------------
+    @commands.command(name="createlist",aliases=['cl'])
+    async def listcreate(self,ctx,*arg):
         id_admin = ctx.author.id
-        if not name:
-            await ctx.send("faut mettre un nom")
+        if len(arg) == 0:
+            await ctx.send("> Erreur dans la commande: ")
         else:
             name = str(name[0])
-            if name_alrdy_take(name,id_admin):
+            if sq.name_alrdy_take(name,id_admin):
                 error = await ctx.send(f"Vous avez déjà une liste sous ce nom")
             else:
-                hight_id = get_hight_id("list")
+                hight_id = sq.get_hight_id("list")
                 iduseredit = []
                 type_list = 'private' #'public'
                 affiliation = 'user' #'server' 
                 cursorsql.execute("INSERT INTO list VALUES (?,?,?,?,?,?)",(hight_id,id_admin,f'{iduseredit}',f'{name}',type_list,affiliation))
                 creation_message = await ctx.send(f"Liste **{name}** créé.")
-        sqlconnect.commit()
+        sq.commit()
 
-    @commands.command(name="listaddmovie",aliases=['lam', 'laddmovie'])
+#------------------------------
+    @commands.command(name="listadd",aliases=['la', 'ladd'])
     async def listadd(self,ctx, *arg):
         idadmin = ctx.author.id
         if len(arg) != 2:
@@ -149,15 +133,15 @@ class list(commands.Cog):
             name_list= arg[1]
             url = arg[0]
             movie_link = get_info(url)
-            list_exist = name_alrdy_take(name_list,idadmin)
+            list_exist = sq.name_alrdy_take(name_list,idadmin)
             if list_exist:
                 if not movie_link:
                     await ctx.send("> Ce film n'existe pas")
                 else:
-                    if check_movie_in_list(url,idadmin):
+                    if sq.check_movie_in_list(url,idadmin):
                         movie_existe = cursorsql.execute(f"SELECT IDmovie FROM movie WHERE IDmovie = {url}")
                         movie_existe = movie_existe.fetchall()
-                        IDlist = get_id_list(name_list,idadmin)
+                        IDlist = sq.get_id_list(name_list,idadmin)
                         if len(movie_existe)==0:
                             cursorsql.execute("INSERT INTO movie VALUES (?,?,?,?,?,?,?,?)",(movie_link['IDmovie'],f"{movie_link['nom']}",f"{movie_link['date']}",f"{movie_link['duree']}",f"{movie_link['ratting']}",f"{movie_link['img']}",f"{movie_link['style']}",f"{movie_link['link']}",))
                             cursorsql.execute("INSERT INTO inlist VALUES (?,?,?,?,?)",(IDlist,url,idadmin,0,'False'))
@@ -169,9 +153,10 @@ class list(commands.Cog):
                         await ctx.send(f"> Ce film est déjà dans la liste **{name_list}**")
             else:
                 await ctx.send(f"> Vous n'avez pas de liste **{name_list}**")
-            sqlconnect.commit()
+            sq.commit()
 
-    @commands.command(name="remove",aliases=['rm', 'r'])
+#------------------------------
+    @commands.command(name="listremove",aliases=['lr','lrm'])
     async def remove(self,ctx, *arg):
         idadmin = ctx.author.id
         if len(arg) != 2:
@@ -179,41 +164,197 @@ class list(commands.Cog):
         else:
             IDmovie = arg[0]
             nom_list = arg[1]
-            id_list = get_id_list(nom_list,idadmin)
+            id_list = sq.get_id_list(nom_list,idadmin)
             cursorsql.execute("DELETE FROM inlist WHERE IDlist = (?) and IDmovie = (?)",(id_list,IDmovie))
             await ctx.send(f"> Le film à été enlever de la liste")
-            sqlconnect.commit()
+            sq.commit()
 
+#------------------------------
     @commands.command(name="film",aliases=['f', 'movie'])
     async def film(self,ctx, *arg):
         idadmin = ctx.author.id
-        IDmovie = arg[0]
-        if len(arg) != 1:
-            await ctx.send("> Erreur dans la commande. [m!help]")
+        if len(arg) > 1:
+            await ctx.send(embed = err_display(ctx,"Il faut seulement renseigné l'ID d'un film."))
+        elif len(arg) == 1:
+            IDmovie = arg[0]
+            movie = sq.get_info_with_id(IDmovie)
+            if not movie:
+                await ctx.send("> Ce film n'est pas enregistré dans la bdd")
+            else:
+                embed = displaymod(movie)
+                await ctx.send(f"> Information: {movie['nom']} [{movie['IDmovie']}]", embed = embed)
         else:
-            movie = get_info_with_id(IDmovie)
-            embed = displaymod(movie)
-            await ctx.send(f"> Information: {movie['nom']}", embed = embed)
-           
-    @commands.command(name="listsee",aliases=['l', 'ls'])
+            await ctx.send(embed = err_display(ctx,'Aucune ID de film renseigné.'))
+
+
+
+#------------------------------
+    @commands.command(name="listsee",aliases=['ls'])
     async def listsee(self,ctx, *arg):
         idadmin = ctx.author.id
-        if len(arg) == 0:
+        if len(arg) == 0: #si pas d'argument --> affichier les listes créer par l'utilisateur
             user_list = cursorsql.execute(f"SELECT * FROM list WHERE IDadmin = {idadmin}")
             user_list = user_list.fetchall()
-            await ctx.send(f"{user_list}")
+            embed = discord.Embed(
+                    title = 'vos liste',
+                    color = discord.Colour.from_rgb(255, 255, 255),
+            )
+            embed.set_author(name="{} - [m!ls]".format(ctx.author.name),icon_url=ctx.author.avatar_url)
+            for liste in user_list:
+                movie_in_list = cursorsql.execute(f"SELECT * FROM inlist WHERE IDadmin = {idadmin} and IDlist = {liste[0]}")
+                movie_in_list = movie_in_list.fetchall()
+                embed.add_field(name=f'〉 {liste[3]}', value=f'Il y a {len(movie_in_list)} film(s)', inline= False)
+            await ctx.send(embed = embed)
 
         elif len(arg) == 1:
-            if name_alrdy_take(arg[0],idadmin):
-                id_list = get_id_list(arg[0],idadmin)
+            if sq.name_alrdy_take(arg[0],idadmin):
+                id_list = sq.get_id_list(arg[0],idadmin)
                 movie_in_list = cursorsql.execute(f"SELECT * FROM inlist WHERE IDadmin = {idadmin} and IDlist = {id_list}")
                 movie_in_list = movie_in_list.fetchall()
-                await ctx.send(f"{movie_in_list}")
+                if len(movie_in_list) == 0:
+                    embed.add_field(name=f'〉 Aucun film trouvé', value=f'Pour en rajouter: [m!help]', inline= False)
+                else:
+                    if len(movie_in_list) > 10:
+                        valid_reactions = [u'\u2B05',u'\u27A1',u'\U0001F522']
+                        new_list = []
+                        
+                        temp = -1
+                        for i in range(0,len(movie_in_list)):
+                            if i%10 == 0:
+                                temp += 1
+                                new_list.append([])
+                                new_list[temp].append(movie_in_list[i])
+                            else:
+                                new_list[temp].append(movie_in_list[i])
+                        current = 0
+                        last_page = len(new_list)-1
+                        valid_page = [str(x) for x in range(0,last_page+1)]
+
+                        def display(current,last_page):
+                            embed = discord.Embed(
+                                title = f'~ {arg[0]} ~ Page {current}/{last_page}',
+                                color = discord.Colour.from_rgb(254, 204, 0),
+                                )
+                            for liste in new_list[current]:
+                                movie = sq.get_info_with_id(liste[1])
+                                movie_name = movie['nom']
+                                if liste[4] == 'True':
+                                    date_vu = datetime.fromtimestamp(liste[3]).strftime('%Y-%m-%d')
+                                    embed.add_field(name=f':green_square: 〉 {movie_name} | Vu le {date_vu}', value=f'ID: {liste[1]}', inline= False)
+                                else:
+                                    embed.add_field(name=f':red_square: 〉 {movie_name}', value=f'ID: {liste[1]}', inline= False)
+                            
+                            return embed
+
+                        show = await ctx.send(embed = display(current,last_page))
+                        await show.add_reaction(valid_reactions[1])
+                        await show.add_reaction(valid_reactions[2])
+                        def check(reaction, user):
+                            return user == ctx.author and str(reaction.emoji) in valid_reactions
+                        try:
+                            while True:
+                                timeout = 1
+                                # reaction = await self.bot.wait_for('reaction_add', timeout=10.0, check=check)    
+                                reaction, user = await self.bot.wait_for('reaction_add', timeout=120.0, check=check)    
+                                if str(reaction.emoji) == valid_reactions[0]:
+                                    current -= 1
+                                    await show.delete()
+                                    show = await ctx.send(embed = display(current,last_page))
+                                    if current == 0:
+                                        await show.add_reaction(valid_reactions[1])
+                                    elif current == last_page:
+                                        await show.add_reaction(valid_reactions[0])
+                                    else:
+                                        await show.add_reaction(valid_reactions[0])
+                                        await show.add_reaction(valid_reactions[1])
+                                    await show.add_reaction(valid_reactions[2])
+                                elif str(reaction.emoji) == valid_reactions[1]:
+                                    current += 1
+                                    await show.delete()
+                                    show = await ctx.send(embed = display(current,last_page))
+                                    if current == 0:
+                                        await show.add_reaction(valid_reactions[1])
+                                    elif current == last_page:
+                                        await show.add_reaction(valid_reactions[0])
+                                    else:
+                                        await show.add_reaction(valid_reactions[0])
+                                        await show.add_reaction(valid_reactions[1])
+                                    await show.add_reaction(valid_reactions[2])
+
+                                elif str(reaction.emoji) == valid_reactions[2]:
+                                    
+                                    await show.delete()
+                                    
+                                    embed = discord.Embed(
+                                        title = f'> Num page ?',
+                                        color = discord.Colour.from_rgb(254, 204, 0),
+                                        )
+                                    
+                                    show2 = await ctx.send(embed = embed)
+
+                                    def check_2(author):
+                                        def inner_check(message):
+                                            return message.author == author
+                                        return inner_check
+
+                                    try:
+                                        msg = await self.bot.wait_for('message', check=check_2(ctx.author), timeout=5)
+                                        if msg.content in valid_page:
+                                            await msg.delete()
+                                            await show2.delete()
+                                            show2 = await ctx.send(embed = display(int(msg.content),last_page))
+                                        else:
+                                            embed = discord.Embed(
+                                                title = f'> Page {msg.content} non disponible',
+                                                color = discord.Colour.from_rgb(254, 204, 0),
+                                                )
+                                            try:
+                                                await msg.delete()
+                                                await show2.delete()
+                                                show2 = await ctx.send(embed = embed)
+                                                # 
+                                            except: pass
+                                    except asyncio.TimeoutError:
+                                        embed = discord.Embed(
+                                            title = f'> Annulé [Timeout]',
+                                            color = discord.Colour.from_rgb(254, 204, 0),
+                                            )
+                                        try:
+                                            await msg.delete()
+                                            await show2.delete()
+                                            show2 = await ctx.send(embed = embed)
+                                        except: pass
+                                    break
+                                else:
+                                    pass
+
+                        except asyncio.TimeoutError:
+                            await show.clear_reaction(valid_reactions[0])
+                            await show.clear_reaction(valid_reactions[1])
+                            await show.clear_reaction(valid_reactions[2])
+
+
+                    else:
+                        embed = discord.Embed(
+                            title = f'~ {arg[0]} ~',
+                            color = discord.Colour.from_rgb(254, 204, 0),
+                            )
+                        for liste in movie_in_list:
+                            movie = sq.get_info_with_id(liste[1])
+                            movie_name = movie['nom']
+                            if liste[4] == 'True':
+                                date_vu = datetime.fromtimestamp(liste[3]).strftime('%Y-%m-%d')
+                                embed.add_field(name=f':green_square: 〉 {movie_name} | Vu le {date_vu}', value=f'ID: {liste[1]}', inline= False)
+                            else:
+                                embed.add_field(name=f':red_square: 〉 {movie_name}', value=f'ID: {liste[1]}', inline= False)
+
+                        await ctx.send(embed = embed)
             else:
                 await ctx.send(f"> Vous n'avez pas de liste **{arg[0]}**")
         else: 
             await ctx.send("> Erreur dans la commande. [m!help]")
 
+#------------------------------
     @commands.Cog.listener()
     async def on_ready(self):
         print('[+] cogs.classic.list')
